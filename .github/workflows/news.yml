@@ -1,0 +1,28 @@
+name: MN News Bot
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Generate safe preview
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-2.5-flash-lite
+          DRY_RUN: 'true'
+        run: python bot.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: news-preview
+          path: public/
+          if-no-files-found: warn
