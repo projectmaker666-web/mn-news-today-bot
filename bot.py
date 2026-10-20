@@ -1,4 +1,4 @@
-import os,json,re,hashlib,time
+import os,json,re,hashlib,time,calendar
 from pathlib import Path
 from datetime import datetime,timezone,timedelta
 from urllib.parse import urlparse
@@ -13,20 +13,27 @@ TAGS={'mongolia':'#МонголМэдээ #MNNewsToday','geek':'#Gaming #Anime #
 FONT='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
 def clean(s):return re.sub(r'\s+',' ',re.sub(r'<[^>]*>',' ',str(s or ''))).strip()
 def story():
- feeds=json.loads((ROOT/'config/feeds.json').read_text())[CAT]
+ feeds_by_category=json.loads((ROOT/'config/feeds.json').read_text())
+ feeds=feeds_by_category[CAT]
+ if DRY:
+  feeds=feeds+sum((urls for category,urls in feeds_by_category.items() if category!=CAT),[])
+ print('Checking',len(feeds),'feeds; selected category:',CAT,flush=True)
  seen=set(json.loads((ROOT/'seen.json').read_text()) if (ROOT/'seen.json').exists() else [])
  for url in feeds:
   try:
-   data=feedparser.parse(requests.get(url,timeout=15,headers={'User-Agent':'MNNewsBot/1.0'}).content)
+   response=requests.get(url,timeout=15,headers={'User-Agent':'Mozilla/5.0 (compatible; MNNewsTodayBot/1.0)'})
+   response.raise_for_status()
+   data=feedparser.parse(response.content)
+   print('Feed',urlparse(url).netloc,'status',response.status_code,'entries',len(data.entries),flush=True)
    for e in data.entries[:15]:
     link=e.get('link','');title=clean(e.get('title',''))
     if not link.startswith('https://') or len(title)<18 or hashlib.sha256(link.encode()).hexdigest() in seen:continue
     stamp=e.get('published_parsed') or e.get('updated_parsed')
     if not stamp:continue
-    age=time.time()-time.mktime(stamp)
-    if not 0<=age<=48*3600:continue
+    age=time.time()-calendar.timegm(stamp)
+    if not 0<=age<=(7*24*3600 if DRY else 48*3600):continue
     return {'title':title,'summary':clean(e.get('summary',''))[:600],'link':link}
-  except Exception as ex:print('Feed skipped:',type(ex).__name__)
+  except Exception as ex:print('Feed skipped:',urlparse(url).netloc,type(ex).__name__,str(ex)[:140],flush=True)
  return None
 def write(s):
  key=os.getenv('GEMINI_API_KEY')
@@ -60,9 +67,15 @@ def draw(title,source):
  img.save(OUT/'latest.jpg',quality=92)
 def main():
  s=story()
- if not s:print('No new recent story; skip');return
+ if not s:
+  print('No eligible recent story; skip',flush=True)
+  (OUT/'status.txt').write_text('No eligible article found. See feed diagnostics in the workflow logs.\n',encoding='utf-8')
+  return
  result=write(s)
- if not result:print('Insufficient facts; skip');return
+ if not result:
+  print('AI declined article; skip',flush=True)
+  (OUT/'status.txt').write_text('Article rejected due to insufficient facts.\n',encoding='utf-8')
+  return
  headline,body=result
  caption=body+'\n\nЭх сурвалж: '+urlparse(s['link']).netloc+'\n'+s['link']+'\n\n'+TAGS[CAT]
  draw(headline,urlparse(s['link']).netloc)
