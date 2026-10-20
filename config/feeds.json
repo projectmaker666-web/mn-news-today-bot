@@ -1,0 +1,15 @@
+{
+  "mongolia": [
+    "https://news.google.com/rss/search?q=site%3Amontsame.mn&hl=mn&gl=MN&ceid=MN%3Amn",
+    "https://news.google.com/rss/search?q=site%3Aikon.mn&hl=mn&gl=MN&ceid=MN%3Amn"
+  ],
+  "geek": [
+    "https://www.theverge.com/rss/index.xml",
+    "https://www.animenewsnetwork.com/news/rss.xml",
+    "https://www.gematsu.com/feed"
+  ],
+  "cinema": [
+    "https://www.hollywoodreporter.com/feed/",
+    "https://variety.com/feed/"
+  ]
+}
