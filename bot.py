@@ -15,8 +15,7 @@ def clean(s):return re.sub(r'\s+',' ',re.sub(r'<[^>]*>',' ',str(s or ''))).strip
 def story():
  feeds_by_category=json.loads((ROOT/'config/feeds.json').read_text())
  feeds=feeds_by_category[CAT]
- if DRY:
-  feeds=feeds+sum((urls for category,urls in feeds_by_category.items() if category!=CAT),[])
+ 
  print('Checking',len(feeds),'feeds; selected category:',CAT,flush=True)
  seen=set(json.loads((ROOT/'seen.json').read_text()) if (ROOT/'seen.json').exists() else [])
  for url in feeds:
@@ -32,21 +31,37 @@ def story():
     if not stamp:continue
     age=time.time()-calendar.timegm(stamp)
     if not 0<=age<=(7*24*3600 if DRY else 48*3600):continue
-    return {'title':title,'summary':clean(e.get('summary',''))[:600],'link':link}
+    return {'title':title,'summary':clean(e.get('summary',''))[:600],'link':link,'category':CAT}
   except Exception as ex:print('Feed skipped:',urlparse(url).netloc,type(ex).__name__,str(ex)[:140],flush=True)
  return None
 def write(s):
  key=os.getenv('GEMINI_API_KEY')
- if key:
-  try:
-   from google import genai
-   prompt='Write a concise Mongolian Instagram news post using ONLY these RSS facts. Do not invent facts, numbers, or quotes. Return JSON with headline and caption. If facts insufficient output SKIP.\n'+json.dumps(s,ensure_ascii=False)
-   answer=genai.Client(api_key=key).models.generate_content(model=os.getenv('GEMINI_MODEL','gemini-2.5-flash-lite'),contents=prompt).text.strip()
-   if answer=='SKIP':return None
-   result=json.loads(answer.removeprefix('```json').removesuffix('```').strip())
-   if 8<=len(result['headline'])<=110 and 10<=len(result['caption'])<=600:return result['headline'],result['caption']
-  except Exception as ex:print('AI unavailable:',type(ex).__name__)
- return s['title'][:100],'Эх сурвалжийн гарчиг: '+s['title'][:250]
+ if not key:
+  print('AI ERROR: GEMINI_API_KEY is missing',flush=True)
+  return None
+ try:
+  from google import genai
+  from google.genai import types
+  prompt=('Та Монгол хэлээр Instagram мэдээ бэлтгэдэг редактор. '
+   'ЗӨВХӨН өгөгдсөн эх сурвалжийн гарчиг, тайлбарт байгаа баримтыг ашигла. '
+   'Баримт, тоо, ишлэл зохиож болохгүй. Гарчиг болон тайлбар нь МОНГОЛ хэлээр, '
+   'кирилл үсгээр бичигдсэн байх ёстой. Эх сурвалжийн баримт дутуу бол '
+   '{"headline":"","caption":""} гэж буцаа. JSON объект: headline, caption.\\n'
+   +json.dumps(s,ensure_ascii=False))
+  response=genai.Client(api_key=key).models.generate_content(
+   model=os.getenv('GEMINI_MODEL','gemini-2.5-flash-lite'),
+   contents=prompt,
+   config=types.GenerateContentConfig(response_mime_type='application/json'))
+  result=json.loads((response.text or '').strip())
+  headline=result.get('headline','').strip()
+  caption=result.get('caption','').strip()
+  cyrillic=lambda t:len(re.findall(r'[А-Яа-яЁёӨөҮү]',t))
+  if 8<=len(headline)<=110 and 20<=len(caption)<=1000 and cyrillic(headline)>=8 and cyrillic(caption)>=20:
+   return headline,caption
+  print('AI ERROR: missing/invalid Mongolian content; skipping',flush=True)
+ except Exception as ex:
+  print('AI ERROR:',type(ex).__name__,str(ex)[:350],flush=True)
+ return None
 def draw(title,source):
  img=Image.new('RGB',(1080,1350),'#111b2b');d=ImageDraw.Draw(img)
  d.rectangle((0,0,1080,20),fill='#ef4359')
@@ -74,7 +89,7 @@ def main():
  result=write(s)
  if not result:
   print('AI declined article; skip',flush=True)
-  (OUT/'status.txt').write_text('Article rejected due to insufficient facts.\n',encoding='utf-8')
+  (OUT/'status.txt').write_text('AI failed, returned non-Mongolian text, or article had insufficient facts.\n',encoding='utf-8')
   return
  headline,body=result
  caption=body+'\n\nЭх сурвалж: '+urlparse(s['link']).netloc+'\n'+s['link']+'\n\n'+TAGS[CAT]
